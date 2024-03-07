@@ -1,0 +1,115 @@
+#version 430 core
+
+layout (local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+
+layout(binding = 1) buffer lName1{
+	uint state[];
+}cells_in;
+
+layout(binding = 2) buffer lName2{
+	uint state[];
+}cells_out;
+
+
+layout (binding = 0, rgba32f) uniform writeonly image2D density_texture;
+
+uniform uint window_width;
+uniform uint window_height;
+uniform uint cell_size;
+
+uniform int rule_survive[9];
+uniform int rule_birth[9];
+
+uint max_age = 150;
+
+vec3 colour = vec3(0.10,0.45,0.85);
+
+#define M_PI 3.1415926535897932384626433832795
+
+
+void main(){
+	uint grid_width = window_width / cell_size;
+	uint grid_height = window_height / cell_size;
+	ivec2 coord = ivec2(gl_GlobalInvocationID.x, grid_height - gl_GlobalInvocationID.y);
+
+	uint pixel_index = gl_GlobalInvocationID.x + (gl_GlobalInvocationID.y * grid_width);
+
+
+	uint tally = 0;
+	ivec2 coord_offset = ivec2(coord.x - 1, coord.y - 1);
+	for(int i = 0; i < 3; i++){
+		for(int j = 0; j < 3; j++){
+			if(((coord_offset.x + i) >= 0) && ((coord_offset.x + i) < grid_width) && ((coord_offset.y + j) >= 0) && ((coord_offset.y + j) < grid_height)){
+				if(!(((coord_offset.x + i) == coord.x) && ((coord_offset.y + j) == coord.y))){
+					if(cells_in.state[(gl_GlobalInvocationID.x - 1 + i) + ((gl_GlobalInvocationID.y - 1 + j) * grid_width)] > 0){
+						tally += 1;
+					}
+				}
+			}
+		}
+	}
+
+	if(cells_in.state[pixel_index] < 0){
+		cells_in.state[pixel_index] = 0;
+	}
+	
+	ivec2 coord_stretched = ivec2(coord.x * cell_size, coord.y * cell_size);
+
+	float distFromCenter = sqrt(((coord.x - 960) * (coord.x - 960)) + ((coord.y - 540) * (coord.y - 540)));
+
+	//colour = vec3(0.0 + ((sin((distFromCenter - 600) / 60) + 1) / 2), 0.0 + ((sin((distFromCenter) / 120) + 1) / 2), 0.0 + ((sin(distFromCenter / 180) + 1) / 2));
+	//colour = vec3(0.0 + ((sin(distFromCenter / 180) + 1) / 2), 0.0 + ((sin((distFromCenter) / 120) + 1) / 2), 0.0 + ((sin((distFromCenter - 600) / 60) + 1) / 2));
+
+	//colour = vec3(0.0 + ((sin((distFromCenter - (M_PI * 40)) / 60) + 1) / 2), 0.0 + ((sin((distFromCenter - (M_PI * 80)) / 60) + 1) / 2), 0.0 + ((sin((distFromCenter - (M_PI * 120)) / 60) + 1) / 2));
+	//colour = vec3(-0.5 + ((sin((distFromCenter - (M_PI * 40)) / 60) + 1) / 2), 0.0 + ((sin((distFromCenter - (M_PI * 80)) / 60) + 1) / 2), 0.5 + ((sin((distFromCenter - (M_PI * 120)) / 60) + 1) / 2));
+
+
+	vec4 pixel_colour;
+	if(cells_in.state[pixel_index] >= max_age){
+		pixel_colour = vec4(0.0, 0.0, 0.0, 1.0);
+		cells_out.state[pixel_index] = 0;
+	}
+	else if(cells_in.state[pixel_index] > 0){
+		//pixel_colour = vec4(1.0 - (cells_in.state[pixel_index] / max_age), 0.0, 0.0, 1.0);
+		pixel_colour = vec4(0.0, 1.0, 0.0, 1.0);
+		if(cells_in.state[pixel_index] == 1){
+			pixel_colour = vec4(colour.x, colour.y, colour.z, 1.0);
+			//pixel_colour = vec4(0.0, 0.0, 0.0, 1.0);
+		}
+		else{
+			pixel_colour = vec4(colour.x - (cells_in.state[pixel_index] * (1 / float(max_age))) , colour.y - (cells_in.state[pixel_index] * (1 / float(max_age))), colour.z - (cells_in.state[pixel_index] * (1 / float(max_age))), 1.0);
+			//pixel_colour = vec4(colour.x * (cells_in.state[pixel_index] * (1 / float(max_age))) , colour.y * (cells_in.state[pixel_index] * (1 / float(max_age))), colour.z * (cells_in.state[pixel_index] * (1 / float(max_age))), 1.0);
+		}
+
+		if(rule_survive[tally] == 0){
+			//pixel_colour = vec4(0.0, 0.0, 0.0, 1.0);
+			cells_out.state[pixel_index] = 0;
+		}
+		else{
+			//pixel_colour = vec4(1.0, 0.0, 0.0, 1.0);
+			cells_out.state[pixel_index] = cells_in.state[pixel_index] + 1;
+			//cells_out.state[pixel_index] = 1;
+		}
+	}
+	else{
+		pixel_colour = vec4(0.0, 0.0, 0.0, 1.0);
+		if(rule_birth[tally] == 1){
+			//pixel_colour = vec4(1.0, 1.0, 0.0, 1.0);
+			cells_out.state[pixel_index] = 1;
+		}
+		else{
+			//pixel_colour = vec4(0.0, 0.0, 0.0, 1.0);
+			cells_out.state[pixel_index] = 0;
+		}
+	}
+
+	ivec2 coord_pixel;
+	for(int i = 0; i < cell_size; i++){
+		for(int j = 0; j < cell_size; j++){
+			coord_pixel = ivec2(coord_stretched.x + i, coord_stretched.y - j);
+			imageStore(density_texture, coord_pixel, pixel_colour);
+		}
+	}
+
+
+}
